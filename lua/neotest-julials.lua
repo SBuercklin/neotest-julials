@@ -1,5 +1,7 @@
 local JuliaAdapter = { name = "neotest-julia" }
 
+local julia_tests = {}
+
 JuliaAdapter.root = function (dir)
     local f = vim.fs.dirname(vim.fs.find('Project.toml',  { upward = true, path = dir })[1])
     return f
@@ -14,8 +16,10 @@ JuliaAdapter.is_test_file = function (file_path)
     return string.sub(bname, -3, -1) == '.jl'
 end
 
+-- The key for the given tests 
 local function keyfunc(pos) return pos.name end
 
+-- Given the description of the test, convert it to the neotest Position type
 local function position(id, type, name, path, range)
     return {id = id, type = type, name = name, path = path, range = range}
 end
@@ -68,8 +72,6 @@ JuliaAdapter.discover_positions = function (file_path)
     return require('neotest.types.tree').from_list(positions, keyfunc)
 end
 
-local global_variable = "julia_tests"
-
 local handle_julia_tests = function (err, result, ctx, config)
     uri = result.uri
     local new_table = {}
@@ -78,23 +80,27 @@ local handle_julia_tests = function (err, result, ctx, config)
         table.insert(new_table, test)
     end
 
-    local updated_table = vim.g[global_variable]
+    local updated_table = julia_tests
     updated_table[uri] = new_table
-    vim.g[global_variable] = updated_table
+    julia_tests = updated_table
 
     return true
 end
 
-vim.lsp.handlers["julia/publishTests"] = handle_julia_tests
 
 local _merge = function (t1,t2)
-    for (k,v) in ipairs(t2) do
-        t1[k] = t2[k]
+    local new_table = t1
+    for k,v in ipairs(t2) do
+        new_table[k] = t2[k]
     end
+    return new_table
 end
 
 local setup = function (opts)
-    local opts = tables.merge()
+    local opts = _merge(default_options, opts)
+    vim.lsp.handlers["julia/publishTests"] = handle_julia_tests
 end
+
+
 
 return JuliaAdapter
