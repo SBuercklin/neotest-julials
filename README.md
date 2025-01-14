@@ -18,15 +18,26 @@ An example installation using `lazy.nvim` could look like:
         "nvim-lua/plenary.nvim",
         "antoinemadec/FixCursorHold.nvim",
         "nvim-treesitter/nvim-treesitter",
-        "sbuercklin/neotest-julials"
+        {"sbuercklin/neotest-julials", config = true} -- config = true is necessary!
     },
-    config = function ()
-        require("neotest").setup({
-          adapters = {
-            require("neotest-julials"),
-          },
-        })
-    end
+    opts = function(_)
+        return {
+            adapters = {
+                require("neotest-julials"),
+            },
+        }
+        return opts
+    end,
+}
+```
+
+Note that you must **also** configure your Julia Language Server to support `julia/publishTests` at startup.
+
+The following entry must be merged with your `julials` configuration, otherwise the test detection will not operate:
+
+```lua
+julials_config = {
+    init_options = { julialangTestItemIdentification = true },
 }
 ```
 

@@ -16,9 +16,6 @@ JuliaAdapter.is_test_file = function(file_path)
     return string.sub(bname, -3, -1) == '.jl'
 end
 
--- The key for the given tests
-local function keyfunc(pos) return pos.name end
-
 -- Given the description of the test, convert it to the neotest Position type
 local function position(id, type, name, path, range)
     return { id = id, type = type, name = name, path = path, range = range }
@@ -27,7 +24,7 @@ end
 local function position_from_entries(path, entries)
     local positions = {}
     for _, e in pairs(entries) do
-        local id = e.id
+        local id = e.label
         local type = 'test'
         local name = id
         local range = {
@@ -43,6 +40,9 @@ local function position_from_entries(path, entries)
     return positions
 end
 
+-- The key for the given tests
+local function keyfunc(pos) return pos.name end
+
 JuliaAdapter.discover_positions = function(file_path)
     local positions = {}
 
@@ -56,7 +56,6 @@ JuliaAdapter.discover_positions = function(file_path)
     for _, v in pairs(positions) do
         max_end_row = math.max(max_end_row, v.range[3])
     end
-
 
     local id = file_path
     local type = 'file'
@@ -72,26 +71,34 @@ JuliaAdapter.discover_positions = function(file_path)
 end
 
 local handle_julia_tests = function(err, result, ctx, config)
-    uri = result.uri
+    local uri = result.uri
     local new_table = {}
 
-    for _, test in pairs(result.testitemdetails) do
-        table.insert(new_table, test)
+    if result.testItemDetails ~= nil then
+        for _, test in pairs(result.testItemDetails) do
+            table.insert(new_table, test)
+        end
     end
 
     local updated_table = julia_tests
     updated_table[uri] = new_table
     julia_tests = updated_table
+    vim.g.tests_jl = julia_tests
 
     return true
 end
 
-local default_options = {}
+local default_options = {
+    activate = true,
+}
 
-local setup = function(_opts)
+JuliaAdapter.setup = function(_opts)
     local opts = vim.tbl_deep_extend('force', default_options, _opts)
-    vim.lsp.handlers["julia/publishTests"] = handle_julia_tests
-end
+    if opts.activate then
+        vim.lsp.handlers['julia/publishTests'] = handle_julia_tests
+    end
 
+    return true
+end
 
 return JuliaAdapter
