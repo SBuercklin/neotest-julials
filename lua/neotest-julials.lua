@@ -1,22 +1,18 @@
 local JuliaAdapter = { name = "neotest-julia" }
 
----@type { [string]: TestItemDetailLSP }
-local julia_tests = {}
+local jllib = require "julials-lib"
+local Globals = require "globals"
+local Utils = require "utilities"
 
----@type { [string]: TestItemDetailLSP }
-local julia_test_setups = {}
+local julia_tests = Globals.julia_tests
+local julia_test_setups = Globals.julia_test_setups
+local julia_test_errors = Globals.julia_test_errors
+local julia_test_envs = Globals.julia_test_envs
+local julia_test_index = Globals.julia_test_index
 
----@type { [string]: TestErrorDetailLSP }
-local julia_test_errors = {}
-
-local julia_environment = ""
-local logging = false
-
-local log = function(...)
-    if logging then
-        vim.print("NEOTEST-JULIALS:", ...)
-    end
-end
+local Logging = require "logging"
+local log = Logging.log
+Logging.logging = false
 
 JuliaAdapter.root = function(dir)
     local f = vim.fs.dirname(vim.fs.find('Project.toml', { upward = true, path = dir })[1])
@@ -32,17 +28,23 @@ JuliaAdapter.is_test_file = function(file_path)
     return string.sub(bname, -3, -1) == '.jl'
 end
 
--- Given the description of the test, convert it to the neotest Position type
+---Given the description of the test, convert it to the neotest Position type
+---comment
+---@return neotest.Position
 local function position(id, type, name, path, range)
     return { id = id, type = type, name = name, path = path, range = range }
 end
 
+---Given the path to the file and a list of test items, construct a list of tests
+---@param path string
+---@param entries TestItemDetailLSP[]
+---@return neotest.Position[]
 local function position_from_entries(path, entries)
     local positions = {}
     for _, e in pairs(entries) do
-        local id = e.label
+        local id = e.id
         local type = 'test'
-        local name = id
+        local name = e.label
         local range = {
             e.range['start'].line,
             e.range['start'].character,
@@ -50,7 +52,9 @@ local function position_from_entries(path, entries)
             e.range['end'].character,
         }
 
-        table.insert(positions, position(id, type, name, path, range))
+        local node = position(id, type, name, path, range)
+        vim.tbl_deep_extend("force", node, { test_data = e })
+        table.insert(positions, node)
     end
 
     return positions
@@ -65,6 +69,7 @@ JuliaAdapter.discover_positions = function(file_path)
     for k, v in pairs(vim.g.tests_jl) do
         local subbed = string.sub(k, 8, -1)
         if subbed == file_path then
+            -- This is assignment because we extract all of the tests in the call
             positions = position_from_entries(file_path, v)
         end
     end
@@ -86,73 +91,75 @@ JuliaAdapter.discover_positions = function(file_path)
     return require('neotest.types.tree').from_list(positions, keyfunc)
 end
 
----Handles the julia test results from julia/publishTests, populating the vim.g.tests_jl
----global variable with information about the tests
----@param err any
----@param result PublishTestsParams
----@param ctx any
----@param config any
----@return boolean
-local handle_julia_tests = function(err, result, ctx, config)
-    local uri = result.uri
-    local new_test_table = {}
-    local new_setup_table = {}
-    local new_error_table = {}
+JuliaAdapter.build_spec = function(args)
+    local data = args.tree:data()
+    local file_key = "file://" .. data.path
+    local test_id = data.id
+    local test_df = vim.g.tests_jl[file_key][test_id]
+    local test_env = julia_test_envs[file_key]
 
-    log("Handling tests")
-    log(result)
-    if result.testItemDetails ~= nil then
-        for _, test in pairs(result.testItemDetails) do
-            table.insert(new_test_table, test)
-        end
+    local uuid = jllib.start_test_item(test_df, test_env)
+
+    return {
+        command = {
+            "/home/sam/work/neotest-julials/scripts/wait_exists.sh",
+            "/tmp/samtest/" .. uuid
+        }
+    }
+end
+
+JuliaAdapter.results = function(spec, result, tree)
+    local _path = spec.command[2]
+    local _splits = Utils.split(_path, '/')
+    local _uuid = _splits[#_splits]
+
+    local test_result = julia_test_index[_uuid]
+    local test_success = test_result[1]
+    if test_success then
+        test_success = "passed"
+    else
+        test_success = "failed"
     end
-    if result.testSetupDetails ~= nil then
-        for _, setup in pairs(result.testSetupDetails) do
-            table.insert(new_setup_table, setup)
-        end
-    end
-    if result.testErrorDetails ~= nil then
-        for _, error in pairs(result.testErrorDetails) do
-            table.insert(new_error_table, error)
-        end
+
+    local f = io.open(_path, "w+")
+    if f then
+        f:write(test_result[2])
+        f:close()
     end
 
-    local updated_test_table = julia_tests
-    updated_test_table[uri] = new_test_table
-    julia_tests = updated_test_table
-    vim.g.tests_jl = julia_tests
+    local neotest_id = tree:data().id
 
-    local updated_setup_table = julia_test_setups
-    updated_setup_table[uri] = new_setup_table
-    julia_test_setups = updated_setup_table
-    vim.g.setups_jl = julia_test_setups
-
-    local updated_error_table = julia_test_errors
-    updated_error_table[uri] = new_error_table
-    julia_test_errors = updated_error_table
-    vim.g.errors_jl = julia_test_errors
-
-    log("Tests", julia_tests)
-    log("Setups", julia_test_setups)
-    log("Errors", julia_test_errors)
-
-    return true
+    return {
+        [neotest_id] = {
+            status = test_success,
+            output = _path
+        }
+    }
 end
 
 local default_options = {
     activate = true,
     environment = "@test_item_controller",
-    logging = false
+    logging = false,
+    num_threads = 1,
+    julia_env = {},
+    max_process_count = 1,
+    juliatic_cmd = { "julia", "/home/sam/work/TestItemControllers.jl/runner.jl" }
 }
 
 JuliaAdapter.setup = function(_opts)
     local opts = vim.tbl_deep_extend('force', default_options, _opts)
     if opts.activate then
-        vim.lsp.handlers['julia/publishTests'] = handle_julia_tests
-        julia_environment = opts.environment
-        logging = opts.logging
+        vim.lsp.handlers['julia/publishTests'] = jllib.handle_julia_tests
 
-        log("Initialized with environemt", julia_environment)
+        Globals.julia_environment = opts.environment
+        Globals.num_threads = opts.num_threads
+        Globals.julia_env = opts.julia_env
+        Globals.max_process_count = opts.max_process_count
+        Globals.juliatic_cmd = opts.juliatic_cmd
+        Logging.logging = opts.logging
+
+        log("Initialized with environment", Globals.julia_environment)
     end
 
     return true

@@ -136,7 +136,10 @@ FileCoverage = {}
 CoverageResult = {}
 
 
-
+---@class CreateTestRunResponse
+---@field status string
+---@field coverage FileCoverage[]?
+CreateTestRunResponse = {}
 
 
 --[[
