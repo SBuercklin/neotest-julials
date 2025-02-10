@@ -83,6 +83,15 @@ M.get_juliatic_client = function()
             log("Failed to start a new JuliaTestItemController.jl instance")
             return nil
         end
+
+        -- Autocommand to kill the session when we leave
+        local grp = vim.api.nvim_create_augroup("neotest-julials", { clear = true })
+        vim.api.nvim_create_autocmd("VimLeave", {
+            callback = function(ev)
+                s.terminate()
+            end
+        })
+
         log("Started a JuliaTestItemController.jl instance")
     else
         log("Found an existing JuliaTestItemController.jl instance")
