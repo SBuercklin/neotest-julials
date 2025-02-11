@@ -14,6 +14,20 @@ local Logging = require "logging"
 local log = Logging.log
 Logging.logging = false
 
+-- OS specific separator, 
+local sep = package.config:sub(1, 1)
+local dirname = string.sub(debug.getinfo(1).source, 2, (string.len('/lua/neotest-julials.lua') + 1) * -1)
+
+local plugin_dir = function(...)
+    local args = {...}
+    local retval = dirname
+    for i = 1,#args do
+        retval = retval .. sep .. tostring(args[i])
+    end
+
+    return retval
+end
+
 JuliaAdapter.root = function(dir)
     local f = vim.fs.dirname(vim.fs.find('Project.toml', { upward = true, path = dir })[1])
     return f
@@ -56,6 +70,10 @@ local function position_from_entries(path, entries)
         vim.tbl_deep_extend("force", node, { test_data = e })
         table.insert(positions, node)
     end
+
+    table.sort(positions, function (a, b)
+        return (a.range[1] <= b.range[1])
+    end)
 
     return positions
 end
@@ -139,12 +157,11 @@ end
 
 local default_options = {
     activate = true,
-    environment = "@test_item_controller",
     logging = false,
     num_threads = 1,
     julia_env = {},
     max_process_count = 1,
-    juliatic_cmd = { "julia", "/home/sam/work/TestItemControllers.jl/runner.jl" }
+    juliatic_cmd = { "julia", plugin_dir("scripts", "run_tic.jl"), "--debug-tic" }
 }
 
 JuliaAdapter.setup = function(_opts)
@@ -152,14 +169,11 @@ JuliaAdapter.setup = function(_opts)
     if opts.activate then
         vim.lsp.handlers['julia/publishTests'] = jllib.handle_julia_tests
 
-        Globals.julia_environment = opts.environment
         Globals.num_threads = opts.num_threads
         Globals.julia_env = opts.julia_env
         Globals.max_process_count = opts.max_process_count
         Globals.juliatic_cmd = opts.juliatic_cmd
         Logging.logging = opts.logging
-
-        log("Initialized with environment", Globals.julia_environment)
     end
 
     return true

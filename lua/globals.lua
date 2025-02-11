@@ -20,10 +20,6 @@ M.julia_test_envs = {}
 ---@type { [string]: [boolean, string ]}
 M.julia_test_index = {}
 
----The Julia environment name for the
----@type string
-M.julia_environment = ""
-
 ---The number of threads to start the Julia test runners with
 ---@type integer
 M.num_threads = 1
